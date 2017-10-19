@@ -41,13 +41,13 @@ Begin["`Private`"];
 (*Private definitions*)
 
 
-AnalyzerCorrection = (ArcTan[-Coth[Im[#1-#2]] Tan[Re[#1-#2]] Tanh[Im[#1+#2]]]+Re[#1+#2])/2 &;
+(*AnalyzerCorrection = (ArcTan[-Coth[Im[#1-#2]] Tan[Re[#1-#2]] Tanh[Im[#1+#2]]]+Re[#1+#2])/2 &;*)
 
 
-PolarizerCorrection = With[
+(*PolarizerCorrection = With[
 		{aCorr = AnalyzerCorrection[#1, #2]},
 		ArcSin[((Tan[#1 - aCorr] + Tan[#2 - aCorr])/(Tan[#2 - aCorr] - Tan[#1 - aCorr]))*Sin[#3 - #4] + #3 + #4]/2
-		] &;
+		] &;*)
 
 
 (* PolarizerAnalyzerCorrection =
@@ -56,13 +56,13 @@ PolarizerCorrection = With[
 		{-Re@Mean@Chop[ArcSin[((Tan[#1 - aCorr] + Tan[#2 - aCorr])/(Tan[#2 - aCorr] - Tan[#1 - aCorr]))*Sin[#3 - #4] + #3 + #4]/2], aCorr}
 		] &;
 *)
-PolarizerAnalyzerCorrection = Function[{rhoShort1,rhoShort2,pola1,pola2},
+(*PolarizerAnalyzerCorrection = Function[{rhoShort1,rhoShort2,pola1,pola2},
 With[{anaCorr=Re@Mean@AnalyzerCorrection[rhoShort1,rhoShort2]},
 With[{k=Tan[rhoShort2-anaCorr]/Tan[rhoShort1-anaCorr],P1=Tan[pola1],P2=Tan[pola2]},
-{((1 - k)*(1 - P1*P2) - Sqrt[-4*k*(P1 - P2)^2 + (-1 + k)^2*(1 + P1*P2)^2])/(2*k*P1 - 2*P2)//Re//Mean,-anaCorr}]]];
+{((1 - k)*(1 - P1*P2) - Sqrt[-4*k*(P1 - P2)^2 + (-1 + k)^2*(1 + P1*P2)^2])/(2*k*P1 - 2*P2)//Re//Mean,-anaCorr}]]];*)
 
 
-NormalizedFourier =
+(* NormalizedFourier =
 	Compile[{{mean, _Real}, {coef, _Complex}, {depol, _Real}},
 		If[mean<=0., .4999999 Sign[coef],
 			With[
@@ -70,13 +70,21 @@ NormalizedFourier =
 				Max[Min[Abs[co],.4999999],.0000001] Sign[co]
 			]
 		],
-		RuntimeAttributes->Listable, RuntimeOptions->"Speed", CompilationTarget->"C", Parallelization->True];
+		RuntimeAttributes->Listable, RuntimeOptions->"Speed", CompilationTarget->"C", Parallelization->True]; *)
 
 
-NormalizedWeight =
+(*NormalizedRhoShort = With[{s = Subtract, d = Divide},
+	Compile[{{fo, _Complex, 0}, {sgn, _Integer, 0}},
+		Block[{div=s[.5, Re[fo]],f = 0.-1.*^-7 I}, If[fo\[NotEqual]0.+0.I,f = fo]; Return[ArcTan[d[Im[f],div]+I sgn d[Sqrt[s[.25,Abs[f]^2]],div]]]],
+		RuntimeAttributes\[Rule]{Listable}, CompilationTarget\[Rule]"C", Parallelization\[Rule]True,
+		RuntimeOptions\[Rule]{"EvaluateSymbolically" \[Rule] False, "CatchMachineOverflow"\[Rule]False, "CatchMachineUnderflow"\[Rule]False}]
+];*)
+
+
+(*NormalizedWeight =
 	Compile[{{mean, _Real}, {coef, _Real}, {noise, _Real}},
 		If[mean <= 0., 1.*^-7, Sqrt[Subtract[1., coef]] Divide[mean, noise]^2],
-		RuntimeAttributes->Listable, RuntimeOptions->"Speed", CompilationTarget->"C", Parallelization->True];
+		RuntimeAttributes->Listable, RuntimeOptions->"Speed", CompilationTarget->"C", Parallelization->True];*)
 
 
 (*Total[Apply[ana[assoc[#1, "RhoShort"], assoc[#2, "RhoShort"]]*assoc[#1, "Weight"]*assoc[#2, "Weight"]*Abs[assoc[#1, "POLA"] - assoc[#2, "POLA"]] & , 
@@ -159,11 +167,14 @@ ImportEPD[name_String]:=
 	]
 
 
+Unprotect[ImportBIG]
+
+
 ImportBIG[names_, p0_, a0_, depol_, four_] := ImportBIG[names, N@p0, N@a0, N@depol, four]
 ImportBIG[names_List, p0_Real, a0_Real, depol_, fourierFunc_]:=
 	With[
 		{strm = OpenRead[#, BinaryFormat->True] & /@ names , n = Length[names],
-			fft = (Exp[-2 I a0 Degree - 2 I Pi (-1+(ConstantArray[0.I,20]+Range[20]))2/20])/20,
+			fft = (Exp[2 I a0 Degree - 2 I Pi (-1+(ConstantArray[0.I,20]+Range[20]))2/20])/20,
 			noise = Exp[2. Pi I KroneckerProduct[Range[3.,9.],Range[0.,19.]]/20]/20
 		},
 		Block[{th, pola, table, table2, tableN, x, comment, ipol, assoc = <||>, depol2 = ReleaseHold@depol},
@@ -199,6 +210,11 @@ ImportBIG[names_List, p0_Real, a0_Real, depol_, fourierFunc_]:=
 				Close[strm[[idx]]],
 				{idx, n}
 			];
+			Do[
+				With[{pos=Transpose[{Pick[Range@Length@assoc[idx, "YRaw"], UnitStep[-Total[assoc[idx, "YRaw"], {2}]], 1]}]},
+					assoc[idx, "YRaw"] = Delete[assoc[idx, "YRaw"], pos];
+					assoc[idx, "XRaw"] = Delete[assoc[idx, "XRaw"], pos]];,
+				{idx, n}];
 			assoc["Full", "X"] = Union @@ assoc[[1 ;; n, "XRaw"]];
 			assoc["Meta", "Length"] = Length[assoc["Full", "X"]];
 			Do[
@@ -206,29 +222,29 @@ ImportBIG[names_List, p0_Real, a0_Real, depol_, fourierFunc_]:=
 					SmartMergeY[
 						assoc[idx, "XRaw"],
 						Complement[assoc["Full", "X"], assoc[idx, "XRaw"]],
-						#*UnitStep[#]&@assoc[idx, "YRaw"]] // Transpose;
+						assoc[idx, "YRaw"]
+					] // Transpose;
 				assoc[idx, "X"] = assoc["Full", "X"],
 				{idx, n}];
 			Do[
-				If[Head[depol2] === Function, depol2 = depol2[assoc[idx, "X"]]]
+				If[Head[depol2] === Function, depol2 = depol2[assoc[idx, "X"]]];
 				If[Head[depol2] === List && Length[depol2] =!= Length[assoc[idx, "X"]], depol2 = 0.];
-				table = Clip[#,{1.*^-7,Max[#]}]&@Mean[assoc[idx, "Y"]];
+				table = Mean[assoc[idx, "Y"]];
 				table2 = fft.assoc[idx, "Y"];
 				tableN = (noise.assoc[idx, "Y"] // Abs // Mean) + 1.*^-7;
 				If[fourierFunc == "Detector",
-					(*assoc[idx, "Fourier"] =
-						{((#2 - 2*#3)*(#2 - #1*#3)*#4)/(#2^2 - 2*#3^2),
-							(-(#1*#2) + 2*#3)/((-1 + depol)*(#2 - #1*#3)),
-							(-#2^2 + 2*#3^2)/((-1 + depol)*(#2 - #1*#3))
-						} & @@@ table // Chop (* Implement later *) *) Null,
-					(* assoc[idx, "Fourier"] = (Clip[Abs[#],{3.*^-7,1.}/2] - RandomReal[1.*^-7, assoc["Meta","Length"]]) Sign[#] &[table2 / table / (1 - depol)] *)
-					assoc[idx, "Fourier"] = NormalizedFourier[table, table2, depol2]
+					Null,
+					assoc[idx, "Fourier"] = (*NormalizedFourier[table, table2, depol2]*) Divide[Divide[table2, table], Clip[1 - depol2, {0.001,1.}]]
 				];
 				(* assoc[idx, "Weight"] = 1.*^-7 + Sqrt[UnitStep[table] table Abs[1-Abs[2 table2/table]^2]] (table/tableN)^2; *)
-				assoc[idx, "Weight"] = NormalizedWeight[table, Abs[2 assoc[idx, "Fourier"]]^2, tableN];
-				assoc[idx, "RhoShort"] = With[
-						{f = assoc[idx, "Fourier"],s=Subtract,d=Divide, sgn = -Sign[assoc[idx, "POLA"]]},
-						ArcTan[With[{div=s[.5, Re[f]]},d[Im[f],div]+I sgn d[Sqrt[s[.25,Abs[f]^2]],div]]]];
+				assoc[idx, "Weight"] = Sqrt[Abs[Subtract[1,Abs[2 assoc[idx, "Fourier"]]^2]]] Divide[table,tableN]^2;
+				assoc[idx, "RhoShort"] =
+					With[{s = Subtract, d = Divide, fo=assoc[idx, "Fourier"],sgn=-Sign@assoc[idx,"POLA"]},
+						Block[
+							{div=s[.5, Re[fo]],f=(Unitize@fo-1)RandomComplex[{-1-I,1+I},Length@fo]*10^-7+fo},
+							ArcTan[d[Im[f],div]+I sgn d[Sqrt[s[.25,Abs[f]^2]],div]]
+						]
+					];
 				assoc[idx, "Rho"] = Tan[assoc[idx, "RhoShort"]] Tan[assoc[idx, "POLA"]],
 				{idx, n}
 			];
@@ -262,7 +278,7 @@ ImportVASE[name_String]:=
 		table[[;;,4]]=Mod[table[[;;,4]],360];
 		table[[;;,2;;]]*=Degree;
 		(assoc[#]=assoc[1])&/@Range[Length[table]];
-		assoc["Full"]= <|"AOI" -> 70. Degree, "X" -> 1., "RhoShort" -> 1., "Weight" -> 1., "TotalWeight" -> 1., "POLA" -> Table[45. Degree,Length[table]]|>;
+		assoc["Full"]= <|"AOI" -> 70. Degree, "X" -> 1., "RhoShort" -> 1., "Weight" -> 1., "TotalWeight" -> 1., "POLA" -> Table[45. Degree, Length@table]|>;
 		assoc["Meta"]= <|"N"->Length[table], "Comment"->imported[[1,1]], "Type" -> "VASE"|>;
 		Do[
 		assoc[i,"X"]=table[[i,1]];
@@ -295,27 +311,42 @@ Begin["`MergingInterface`"];
 mergingComplete=False;
 
 
+saveParams = <|"Energy" -> (#&), "Eps1" -> True, "Eps2" -> True, "Sig1" -> True, "Sig2" -> True, "AOI" -> True, "Header" -> True|>
+
+
 (* phase = Compile[{{l,_Complex,1}},FoldList[Function[{prev,new},#+Round[prev-#,2 Pi]&@Arg@new],Arg@First@l,Rest@l],RuntimeOptions->"Speed"]; *)
 
 
+findA0=Compile[{{rs,_Complex,2},{w,_Real,2}},
+Block[{step=.157,a0=0.,norm=Most[{0.}]},
+Do[
+norm=Table[With[{try=Mod[Arg[(Tan[rs]-Tan[ta0])/(1+Tan[rs]Tan[ta0])],Pi]},Total@Total@Abs[Transpose[Transpose[try]-Mean[try]]w]],{ta0,a0-8step,a0+8step,step}];
+a0=a0-(9-First@Ordering@norm)step;step=step/16;,
+{5}];
+a0]];
+
+
+findP0=Compile[{{rs,_Complex,2},{w,_Real,2},{pola,_Real,1},{a0,_Real}},
+With[{trs=Tan[rs-a0]},
+Block[{step=.157,p0=0.,norm=Most[{0.}]},
+Do[
+norm=Table[With[{try=Cot[pola-tp0]},(Transpose[Transpose[Abs[trs]Sign[pola]]/Total[Abs[trs]]]-(try/Total[Abs[try]]))w//Abs//Total//Total],{tp0,p0-8step,p0+8step,step}];
+p0=p0-(9-First@Ordering@norm)step;step=step/16;,
+{5}];
+p0]]];
+
+
 FindCorrectionsRoutine[idx_] :=
-	With[
-		{assoc=ImportBIG[Database[idx, "Files"], Database[idx, "Init", "P0"], Database[idx, "Init", "A0"], Database[idx, "Init", "Depol"], 0.]},
+	Module[{}, If[Length@Database[idx, "Files"] < 2, Return[]]; (*If just one file, don't even load*)
 		With[
-			{keys=SortBy[assoc // Keys // Cases[_Integer], assoc[#, "POLA"] &][[{-1, 1}]]},
-			If[
-				Subtract@@(assoc[#, "POLA"] & /@ keys) < 1.Degree,
-				(* Do nothing *) Null,
-				{
-					Database[idx, "Init", "P0"],
-					Database[idx, "Init", "A0"]
-				} += 
-					(PolarizerAnalyzerCorrection[
-						assoc[keys[[1]], "RhoShort"] // Part[#, Floor[.15 Length[#]];;Floor[.85 Length[#]]] &,
-						assoc[keys[[2]], "RhoShort"] // Part[#, Floor[.15 Length[#]];;Floor[.85 Length[#]]] &,
-						assoc[keys[[1]], "POLA"],
-						assoc[keys[[2]], "POLA"]
-					] / Degree // Round[#, .01] &)
+			{assoc=ImportBIG[Database[idx, "Files"], Database[idx, "Init", "P0"], Database[idx, "Init", "A0"], Database[idx, "Init", "Depol"], 0.]},
+			If[-Subtract@@MinMax[assoc["Full", "POLA"]] < 1. Degree, Return[]]; (* If small range of pola angles, abort*)
+			With[
+				{rs = assoc["Full", "RhoShort"], w = assoc["Full", "Weight"], pola = assoc["Full", "POLA"]},
+				With[
+					{a0 = findA0[rs, w]},
+					{Database[idx, "Init", "P0"], Database[idx, "Init", "A0"]} += ({findP0[rs,w,pola,a0]/Degree, a0/Degree} // Round[#, .01]&)
+				]
 			]
 		]
 	]
@@ -1045,16 +1076,15 @@ OpenFileButton[] :=
 
 ExportTab[] := If[mergingComplete, 
 						With[{outY = Table[
-								With[{simc=!ListQ[Database[i,"Corr","Comp"]],cA0=Database[i,"Corr","A0"],cP0=Database[i,"Corr","P0"],
-									lr = Span@@MinMax[{Database[i, "Corr", "Left"]*Database[i,"Meta", "Length"] + 1 // Ceiling,
-										Database[i,"Meta", "Length"](1 - Database[i, "Corr", "Right"]) // Floor}]},
-									(Database[[i,"Full","Weight",;;,lr]] *
-										Tan[Database[[i,"Full","RhoShort",;;,lr]] + cA0] *
-											Tan[Database[i,"Full","POLA"] + cP0] // Total) /
-												If[simc,
-													Database[i,"Corr","Comp"],
-													Database[[i,"Corr","Comp",lr]]] /
-													Database[[i,"Full","TotalWeight",lr]]],
+							With[
+								{
+									cA0=Database[i,"Corr","A0"],
+									cP0=Database[i,"Corr","P0"],
+									lr = Span @@ MinMax[{
+										Database[i, "Corr", "Left"]*Database[i,"Meta", "Length"] + 1 // Ceiling,
+										Database[i,"Meta", "Length"](1 - Database[i, "Corr", "Right"]) // Floor
+									}]
+								}, correctedRho[i, lr, cP0, cA0, Database[i, "Corr", "dComp"]]],
 								{i, IRRanges + VISRanges}],
 							outX = Table[
 								With[{lr = Span@@MinMax[{Database[i, "Corr", "Left"]*Database[i,"Meta", "Length"] + 1 // Ceiling,
@@ -1092,25 +1122,53 @@ Grid[{
 		{
 		ListLogLinearPlot[
 			outTableA,
-			PlotTheme->{"BackgroundColor", Black}, ImageSize -> {1400, 300}, PlotRange -> Automatic, Joined->False, ImagePadding->40, AspectRatio->22/132,
+			PlotTheme->{"BackgroundColor", Black}, ImageSize -> {1400, 300}, PlotRange -> {Automatic, Full}, Joined->False, ImagePadding->40, AspectRatio->22/132,
 			PlotLabel->"Effective angle of incidence vs. frequency"],
 		SpanFromLeft},
-		{"Sanity check: ", outTable1[[;;,1]] == outTable2[[;;,1]] == outTableA[[;;,1]]," ", FromExportTab[], SpanFromLeft},
-		{
-			ExportDirectoryButton[],
-			ExportSpectrumButton[
-				{outTableA[[;;,1]],outTable1[[;;,2]],outTable2[[;;,2]],outTableA[[;;,2]]} //
-					{#, #2, #3, 0.0166782045 # #3, 0.0166782045 # (Subtract[1,#2]), #4} & @@ # & //
-					Transpose
+		{Row[{
+			"Data OK: ", outTable1[[;;,1]] == outTable2[[;;,1]] == outTableA[[;;,1]]," | ",
+			"Energy units:", PopupMenu[Dynamic[saveParams["Energy"]],
+				Thread[{#&, 0.000123984#&, 0.0299792458#&, 0.188365157#&, Divide[10000.,#]&}->{"cm-1","eV","THz","10^12 rad/s","\[Mu]m"}]
 			],
-			SpanFromLeft
-		},
-		{MessageBox[ToString@exportDir, {40,1}], StyledField[Dynamic[exportFile],String],".bps",SpanFromLeft}
+			" Eps1:", Checkbox[Dynamic[saveParams["Eps1"]]],
+			" Eps2:", Checkbox[Dynamic[saveParams["Eps2"]]],
+			" Sig1:", Checkbox[Dynamic[saveParams["Sig1"]]],
+			" Sig2:", Checkbox[Dynamic[saveParams["Sig2"]]],
+			"  AOI:", Checkbox[Dynamic[saveParams["AOI"]]],
+			" Include header:", Checkbox[Dynamic[saveParams["Header"]]], " | ",
+		FromExportTab[]}], SpanFromLeft},
+		{ExportDirectoryButton[], MessageBox[ToString@exportDir, {40,1}], Column[{"Filename", StyledField[Dynamic[exportFile],String], ""}],".bps",
+			ExportSpectrumButton[
+				{outTableA[[;;,1]],outTable1[[;;,2]],outTable2[[;;,2]],outTableA[[;;,2]]} // {
+					saveParams["Energy"]@#,
+					If[saveParams["Eps1"],#2,Nothing],
+					If[saveParams["Eps2"],#3,Nothing],
+					If[saveParams["Sig1"],0.0166782045 # #3,Nothing],
+					If[saveParams["Sig2"],0.0166782045 # (Subtract[1,#2]),Nothing],
+					If[saveParams["AOI"],#4,Nothing]
+				} & @@ # & // Transpose
+			],
+		SpanFromLeft},
+		{SpanFromAbove, SpanFromAbove, SpanFromAbove, "-e1.dat\n-e2.dat",
+			ExportWASFButton[{outTableA[[;;,1]],outTable1[[;;,2]],outTable2[[;;,2]]}//Transpose], SpanFromLeft}
 	},
-	BaseStyle->{16,GrayLevel[.75],FontFamily->"Consolas"}, Background->Black, Frame -> All
+	BaseStyle->{16,GrayLevel[.75],FontFamily->"Consolas"}, Background->Black, Frame -> All, Alignment->{Center, Center}
 ]
 						]
 					]],""]
+
+
+ExportWASFButton[data_] :=
+	Button["Export WASF",
+		With[{strm1 = OpenWrite[FileNameJoin[{exportDir,exportFile<>"-e1.dat"}]],
+				strm2 = OpenWrite[FileNameJoin[{exportDir,exportFile<>"-e2.dat"}]]},
+			WriteString[strm1,StringRiffle[data[[;;,{1,2}]],"\n","\t"]];
+			Close[strm1];
+			WriteString[strm2,StringRiffle[data[[;;,{1,3}]],"\n","\t"]];
+			Close[strm2];
+		],
+		Background->Purple, BaseStyle->{16,GrayLevel[.75],FontFamily->"Consolas"}, ImageSize->Automatic, Method->"Queued"
+	]
 
 
 ExportFileHeader[] :=
@@ -1124,13 +1182,13 @@ ExportFileHeader[] :=
 				] &,
 			db := Database,
 			toTab = ImportString[ExportString[#,"Table","FieldSeparators"->" ",Alignment->#2,"TextDelimiters"->{"",""}],"Lines"]&},
-	Join@@Table[
+	Join@@(Table[
 		toTab[{{"Range",i, " ", " ", " "}, {"Frequencies from",SetPrecision[Min[db[i,"Full","X"]],5],"to",SetPrecision[Max[db[i,"Full","X"]],5], "cm-1"},
 				{"Using data from"}~Join~
 					Riffle[SetPrecision[Part[db[i,"Full","X"],MinMax[{db[i, "Corr", "Left"]*db[i,"Meta", "Length"] + 1 // Ceiling,
 					db[i,"Meta", "Length"](1 - db[i, "Corr", "Right"]) // Floor}]],5],"to"]~Join~{"cm-1"}}, Right]
 		~Join~{" "}~Join~
-		toTab[(Thread[{db[[i,"Files"]],SetPrecision[db[[i,"Full","AOI"]]/Degree,3],"/",
+		toTab[Union@(Thread[{If[i>IRRanges,First,Identity]@db[[i,"Files"]],SetPrecision[db[[i,"Full","AOI"]]/Degree,3],"/",
 			SetPrecision[db[[i,"Full","POLA"]]/Degree+db[[i,"Init","P0"]],3]}])~Prepend~{"Filename","AOI","/","POLA"},Left]
 		~Join~{" "}~Join~
 		toTab[SetPrecision[ArrayFlatten[{{"Corrections",{{"P0","A0","Depol","AOI"}}},{{{"Initial"},{"Interactive"}},
@@ -1139,16 +1197,25 @@ ExportFileHeader[] :=
 				{key1,{"Init","Corr"}},
 				{key2,{"P0","A0","Depol","dTh"}}]/._Missing->0.}}],3]/. 0->0.,Right]~Join~
 		{"---"},
-		{i, IRRanges + VISRanges}]
+		{i, IRRanges + VISRanges}]~Join~{{
+		saveParams["Energy"]/.Thread[{#&, 0.000123984#&, 0.0299792458#&, 0.188365157#&, Divide[10000.,#]&}->{"cm-1","eV","THz","10^12 rad/s","um"}],
+		If[saveParams["Eps1"],"Eps1",Nothing],
+		If[saveParams["Eps2"],"Eps2",Nothing],
+		If[saveParams["Sig1"],"Sig1",Nothing],
+		If[saveParams["Sig2"],"Sig2",Nothing],
+		If[saveParams["AOI"],"AOI",Nothing]
+		}})
 	]
 
 
 ExportSpectrumButton[data_] :=
 	Button["Export",
 		With[{strm = OpenWrite[FileNameJoin[{exportDir,exportFile<>".bps"}]]},
-			WriteLine[strm, ToString[Length[ExportFileHeader[]] + 2] <> " header lines"];
-			WriteLine[strm, ""<>("*"~Table~15)];
-			Do[WriteLine[strm,line],{line,ExportFileHeader[]}];
+			If[saveParams["Header"],
+				WriteLine[strm, ToString[Length[ExportFileHeader[]] + 2] <> " header lines"];
+				WriteLine[strm, ""<>("*"~Table~15)];
+				Do[WriteLine[strm,line],{line,ExportFileHeader[]}]
+			];
 			WriteString[strm,StringRiffle[data,"\n","\t"]];
 			Close[strm];
 		],
