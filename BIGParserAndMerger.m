@@ -237,7 +237,8 @@ ImportBIG[names_List, p0_Real, a0_Real, depol_, fourierFunc_]:=
 					assoc[idx, "Fourier"] = (*NormalizedFourier[table, table2, depol2]*) Divide[Divide[table2, table], Clip[1 - depol2, {0.001,1.}]]
 				];
 				(* assoc[idx, "Weight"] = 1.*^-7 + Sqrt[UnitStep[table] table Abs[1-Abs[2 table2/table]^2]] (table/tableN)^2; *)
-				assoc[idx, "Weight"] = Sqrt[Abs[Subtract[1,Abs[2 assoc[idx, "Fourier"]]^2]]] Divide[table,tableN]^2;
+				assoc[idx, "Weight"] =
+					Clip[Re[Sqrt[Subtract[1,Abs[2 assoc[idx, "Fourier"]]^2]]] Divide[table,tableN]^2,{1.*^-7,Infinity}];
 				assoc[idx, "RhoShort"] =
 					With[{s = Subtract, d = Divide, fo=assoc[idx, "Fourier"],sgn=-Sign@assoc[idx,"POLA"]},
 						Block[
@@ -317,23 +318,42 @@ saveParams = <|"Energy" -> (#&), "Eps1" -> True, "Eps2" -> True, "Sig1" -> True,
 (* phase = Compile[{{l,_Complex,1}},FoldList[Function[{prev,new},#+Round[prev-#,2 Pi]&@Arg@new],Arg@First@l,Rest@l],RuntimeOptions->"Speed"]; *)
 
 
-findA0=Compile[{{rs,_Complex,2},{w,_Real,2}},
-Block[{step=.157,a0=0.,norm=Most[{0.}]},
-Do[
-norm=Table[With[{try=Mod[Arg[(Tan[rs]-Tan[ta0])/(1+Tan[rs]Tan[ta0])],Pi]},Total@Total@Abs[Transpose[Transpose[try]-Mean[try]]w]],{ta0,a0-8step,a0+8step,step}];
-a0=a0-(9-First@Ordering@norm)step;step=step/16;,
-{5}];
-a0]];
+findA0 = Compile[{{rs,_Complex,2},{w,_Real,2}},
+		Block[
+			{step=.157,a0=0.,norm=Most[{0.}]},
+			Do[
+				norm =
+					Table[
+						With[
+							{try=Mod[Arg[(Tan[rs] - Tan[ta0])/(1 + Tan[rs] Tan[ta0])],Pi]},
+							Total@Total@Abs[Transpose[Transpose[try]-Mean[try]]w]
+						],
+						{ta0,a0-8step,a0+8step,step}
+					];
+				a0 = a0 - (9 - First@Ordering@norm)step; step = step/16,
+				{5}
+			];
+			a0], RuntimeOptions->"Speed", Parallelization->True, CompilationTarget->"C"];
 
 
-findP0=Compile[{{rs,_Complex,2},{w,_Real,2},{pola,_Real,1},{a0,_Real}},
-With[{trs=Tan[rs-a0]},
-Block[{step=.157,p0=0.,norm=Most[{0.}]},
-Do[
-norm=Table[With[{try=Cot[pola-tp0]},(Transpose[Transpose[Abs[trs]Sign[pola]]/Total[Abs[trs]]]-(try/Total[Abs[try]]))w//Abs//Total//Total],{tp0,p0-8step,p0+8step,step}];
-p0=p0-(9-First@Ordering@norm)step;step=step/16;,
-{5}];
-p0]]];
+findP0 = Compile[{{rs,_Complex,2},{w,_Real,2},{pola,_Real,1},{a0,_Real}},
+		With[
+			{trs=Tan[rs-a0]},
+			Block[
+				{step=.157,p0=0.,norm=Most[{0.}]},
+				Do[
+					norm = 
+						Table[
+							With[
+								{try=Cot[pola-tp0]},
+								(Transpose[Transpose[Abs[trs]Sign[pola]]/Total[Abs[trs]]]-(try/Total[Abs[try]]))w//Abs//Total//Total
+							],
+							{tp0,p0-8step,p0+8step,step}
+						];
+					p0 = p0 - (9 - First@Ordering@norm)step; step = step/16;,
+					{5}
+				];
+				p0]], RuntimeOptions->"Speed", Parallelization->True, CompilationTarget->"C"];
 
 
 FindCorrectionsRoutine[idx_] :=
@@ -353,23 +373,16 @@ FindCorrectionsRoutine[idx_] :=
 
 
 FindCorrectionsRoutine[idx_, "Comp"] :=
-	With[
-		{assoc=ImportBIG[Database[idx, "Comp", "Files"], Database[idx, "Comp", "P0"], Database[idx, "Comp", "A0"], 0., 0.]},
+	Module[{}, If[Length@Database[idx, "Comp", "Files"] < 2, Return[]]; (*If just one file, don't even load*)
 		With[
-			{keys=SortBy[assoc // Keys // Cases[_Integer], assoc[#, "POLA"] &][[{-1, 1}]]},
-			If[
-				Subtract@@(assoc[#, "POLA"] & /@ keys) < 1.Degree,
-				(* Do nothing *) Null,
-				{
-					Database[idx, "Comp", "P0"],
-					Database[idx, "Comp", "A0"]
-				} += 
-					(PolarizerAnalyzerCorrection[
-						assoc[keys[[1]], "RhoShort"] // Part[#, Floor[.15 Length[#]];;Floor[.85 Length[#]]] &,
-						assoc[keys[[2]], "RhoShort"] // Part[#, Floor[.15 Length[#]];;Floor[.85 Length[#]]] &,
-						assoc[keys[[1]], "POLA"],
-						assoc[keys[[2]], "POLA"]
-					] / Degree // Round[#, .01] &)
+			{assoc=ImportBIG[Database[idx, "Comp", "Files"], Database[idx, "Comp", "P0"], Database[idx, "Comp", "A0"], 0., 0.]},
+			If[-Subtract@@MinMax[assoc["Full", "POLA"]] < 1. Degree, Return[]]; (* If small range of pola angles, abort*)
+			With[
+				{rs = assoc["Full", "RhoShort"], w = assoc["Full", "Weight"], pola = assoc["Full", "POLA"]},
+				With[
+					{a0 = findA0[rs, w]},
+					{Database[idx, "Comp", "P0"], Database[idx, "Comp", "A0"]} += ({findP0[rs,w,pola,a0]/Degree, a0/Degree} // Round[#, .01]&)
+				]
 			]
 		]
 	]
