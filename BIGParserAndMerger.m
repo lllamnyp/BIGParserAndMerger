@@ -234,7 +234,7 @@ ImportBIG[names_List, p0_Real, a0_Real, depol_, fourierFunc_]:=
 				tableN = (noise.assoc[idx, "Y"] // Abs // Mean) + 1.*^-7;
 				If[fourierFunc == "Detector",
 					Null,
-					assoc[idx, "Fourier"] = (*NormalizedFourier[table, table2, depol2]*) Divide[Divide[table2, table], Clip[1 - depol2, {0.001,1.}]]
+					assoc[idx, "Fourier"] = Divide[Divide[table2, table]//Clip[Abs@#,{1.*-7,0.4999999}]Exp[I Arg@#]&, Clip[1 - depol2, {0.001,1.}]]
 				];
 				(* assoc[idx, "Weight"] = 1.*^-7 + Sqrt[UnitStep[table] table Abs[1-Abs[2 table2/table]^2]] (table/tableN)^2; *)
 				assoc[idx, "Weight"] =
