@@ -311,7 +311,7 @@ $PackageDirectory = DirectoryName[$InputFileName];
 
 scanDir[dir_] := With[{currentDir = Directory[]},
 	SetDirectory[$PackageDirectory];
-	Run["scanDir.exe",#,IntegerString[Hash[#],36],IntegerString[Hash[FileNames["*.big",#]],36]]&[dir];
+	Run["scanDir.exe","\""<>#<>"\"",IntegerString[Hash[#],36],IntegerString[Hash[FileNames["*.big",#]],36]]&[dir];
 	SetDirectory[currentDir];
 	With[{strm = OpenRead[FileNameJoin[{$PackageDirectory,"cache", IntegerString[Hash[dir],36]}]]},
 		ReadList[strm, String, 1];
