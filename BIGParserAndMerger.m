@@ -325,7 +325,7 @@ scanDir[dir_] := With[{currentDir = Directory[]},
 mergingComplete=False;
 
 
-saveParams = <|"Energy" -> (#&), "Eps1" -> True, "Eps2" -> True, "Sig1" -> True, "Sig2" -> True, "AOI" -> True, "Header" -> True|>
+saveParams = <|"Energy" -> (#&), "Psi" -> True, "Del" -> True, "Eps1" -> True, "Eps2" -> True, "Sig1" -> True, "Sig2" -> True, "AOI" -> True, "Header" -> True|>
 
 
 (* phase = Compile[{{l,_Complex,1}},FoldList[Function[{prev,new},#+Round[prev-#,2 Pi]&@Arg@new],Arg@First@l,Rest@l],RuntimeOptions->"Speed"]; *)
@@ -1188,7 +1188,7 @@ ExportTab[] := If[mergingComplete,
 										Database[[i,"Full","X",lr]]],
 								{i, IRRanges + VISRanges}],
 							outAOI = Database[[mIdxs,"Full","AOI"]]+Database[[mIdxs,"Corr","dTh"]] // Values},
-							With[{outYf1 = eps1C[outX,outAOI,outY], outYf2 = eps2C[outX,outAOI,outY]},
+							With[{outYf1 = eps1C[outX,outAOI,outY], outYf2 = eps2C[outX,outAOI,outY], outP = psiC[outX,outAOI,outY], outD = deltaC[outX,outAOI,outY]},
 								With[{
 									outTable1 = 
 										SortBy[DeleteDuplicatesBy[Join@@
@@ -1207,7 +1207,15 @@ ExportTab[] := If[mergingComplete,
 						Cos[ outAOI[[i+1]]~Table~Length[ outX[[i+1]] ] ]^2
 					] // Transpose, {i, IRRanges + VISRanges - 1}]~Join~
 					Table[{outX[[i]],Cos[outAOI[[i]]~Table~Length[outX[[i]]]]^2} // Transpose,{i,IRRanges+VISRanges}]),First],First] //
-						Transpose // {#, Divide[ArcCos[Sqrt[#2]],Degree]}& @@ # & // Transpose},
+						Transpose // {#, Divide[ArcCos[Sqrt[#2]],Degree]}& @@ # & // Transpose,
+									outTableP =
+										SortBy[DeleteDuplicatesBy[Join@@
+				(Table[MiddleDataTransfer[outX[[i]],outX[[i+1]],outP[[i]],outP[[i+1]]]//Transpose, {i, IRRanges + VISRanges - 1}]~Join~
+					Table[{outX[[i]],outP[[i]]}//Transpose,{i,IRRanges+VISRanges}]),First],First],
+									outTableD =
+										SortBy[DeleteDuplicatesBy[Join@@
+				(Table[MiddleDataTransfer[outX[[i]],outX[[i+1]],outD[[i]],outD[[i+1]]]//Transpose, {i, IRRanges + VISRanges - 1}]~Join~
+					Table[{outX[[i]],outD[[i]]}//Transpose,{i,IRRanges+VISRanges}]),First],First]},
 Grid[{
 		{
 		ListLogLinearPlot[
@@ -1226,6 +1234,8 @@ Grid[{
 			"Energy units:", PopupMenu[Dynamic[saveParams["Energy"]],
 				Thread[{#&, 0.000123984#&, 0.0299792458#&, 0.188365157#&, Divide[10000.,#]&}->{"cm-1","eV","THz","10^12 rad/s","\[Mu]m"}]
 			],
+			"  Psi:", Checkbox[Dynamic[saveParams["Psi"]]],
+			"  Del:", Checkbox[Dynamic[saveParams["Del"]]],
 			" Eps1:", Checkbox[Dynamic[saveParams["Eps1"]]],
 			" Eps2:", Checkbox[Dynamic[saveParams["Eps2"]]],
 			" Sig1:", Checkbox[Dynamic[saveParams["Sig1"]]],
@@ -1235,8 +1245,10 @@ Grid[{
 		FromExportTab[]}], SpanFromLeft},
 		{ExportDirectoryButton[], MessageBox[ToString@exportDir, {40,1}], Column[{"Filename", StyledField[Dynamic[exportFile],String], ""}],".bps",
 			ExportSpectrumButton[
-				{outTableA[[;;,1]],outTable1[[;;,2]],outTable2[[;;,2]],outTableA[[;;,2]]} // {
+				{outTableA[[;;,1]],outTable1[[;;,2]],outTable2[[;;,2]],outTableA[[;;,2]],outTableP[[;;,2]],outTableD[[;;,2]]} // {
 					saveParams["Energy"]@#,
+					If[saveParams["Psi"],#5,Nothing],
+					If[saveParams["Del"],#6,Nothing],
 					If[saveParams["Eps1"],#2,Nothing],
 					If[saveParams["Eps2"],#3,Nothing],
 					If[saveParams["Sig1"],0.0166782045 # #3,Nothing],
@@ -1295,6 +1307,8 @@ ExportFileHeader[] :=
 		{"---"},
 		{i, IRRanges + VISRanges}]~Join~{{
 		saveParams["Energy"]/.Thread[{#&, 0.000123984#&, 0.0299792458#&, 0.188365157#&, Divide[10000.,#]&}->{"cm-1","eV","THz","10^12 rad/s","um"}],
+		If[saveParams["Psi"],"Psi",Nothing],
+		If[saveParams["Del"],"Del",Nothing],
 		If[saveParams["Eps1"],"Eps1",Nothing],
 		If[saveParams["Eps2"],"Eps2",Nothing],
 		If[saveParams["Sig1"],"Sig1",Nothing],
