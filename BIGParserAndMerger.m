@@ -1258,7 +1258,11 @@ Grid[{
 			],
 		SpanFromLeft},
 		{SpanFromAbove, SpanFromAbove, SpanFromAbove, "-e1.dat\n-e2.dat",
-			ExportWASFButton[{outTableA[[;;,1]],outTable1[[;;,2]],outTable2[[;;,2]]}//Transpose], SpanFromLeft}
+			ExportWASFButton[{outTableA[[;;,1]],outTable1[[;;,2]],outTable2[[;;,2]]}//Transpose], SpanFromLeft},
+        {SpanFromAbove, SpanFromAbove, SpanFromAbove, ".dat",
+            ExportVASEButton[Map[ToString,SetPrecision[Join@@(Thread/@Thread[{outX,Round[outAOI/Degree,1.*^-4]+1.*^-5 Range[Length[outAOI]],outP,-outD}])//Transpose,7],{2}]], SpanFromLeft}
+        (* The angles of incidence are coerced to be all distinct by rounding to the nearest 10^-4 degree, then adding {1,2,3,...}10^-5 degree. This should make no practical difference for
+           calculations, but VASE will recognize the series of measurements as different *)
 	},
 	BaseStyle->{16,GrayLevel[.75],FontFamily->"Consolas"}, Background->Black, Frame -> All, Alignment->{Center, Center}
 ]
@@ -1276,6 +1280,18 @@ ExportWASFButton[data_] :=
 			Close[strm2];
 		],
 		Background->Purple, BaseStyle->{16,GrayLevel[.75],FontFamily->"Consolas"}, ImageSize->Automatic, Method->"Queued"
+	]
+
+
+ExportVASEButton[data_] :=
+    Button["Export VASE",
+        With[{strm = OpenWrite[FileNameJoin[{exportDir,exportFile<>".dat"}]],
+                output = Thread[Join[{"E"},data,{1.,1.}]]},
+            WriteString[strm,"BIGParserAndMerger "<>exportFile<>"\n1/cm\n"];
+            WriteString[strm,StringRiffle[output,"\n","\t"]];
+            Close[strm];
+        ],
+        Background->Purple, BaseStyle->{16,GrayLevel[.75],FontFamily->"Consolas"}, ImageSize->Automatic, Method->"Queued"
 	]
 
 
