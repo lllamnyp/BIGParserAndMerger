@@ -44,4 +44,18 @@ After loading the package into memory by one of the methods from the previous se
 
     MergingInterface[]
 
+### Range selection
+
 The following window shall appear
+
+![Range selection](https://github.com/lllamnyp/BIGParserAndMerger/raw/master/img/range_select.png)
+
+The program was designed with the two types of experimental setups in mind: the infrared Fourier-transform ellipsometers and the near-IR to deep-UV Woolam ellipsometer. Each setup can operate in several spectral ranges. Here you must select the appropriate number of ranges (sets of measurements) to use.
+
+For example, you have a measurement in the far-IR range, a measurement in the mid-IR range with a compensator that works well in the lower end of the mid-IR spectrum, a measurement in the mid-IR range without a compensator that works well in the higher end of the spectrum, and, finally, a measurement in the near-IR range. All are done on the Fourier-transform ellipsometers. That gives **4** FTIR .big file ranges.
+
+On top of that you may have also performed measurements on the Woolam setup, say one with the `0.5 -- 4.0 eV` optical fiber, and another with the `0.75 -- 6.5 eV` optical fiber. This gives **2** Woolam ranges.
+
+After setting the sliders to the appropriate positions, you may hit "Next" to specify the data files.
+
+![File selection](https://github.com/lllamnyp/BIGParserAndMerger/raw/master/img/file_select.png)
