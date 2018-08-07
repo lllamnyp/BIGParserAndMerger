@@ -20,29 +20,37 @@ On Windows the necessary package files (`init.m`, `BIGParserAndMerger.m`, and `s
 
 Open Mathematica (v10 required) and run
 
-    << BIGParserAndMerger`
-    
+```mathematica
+<< BIGParserAndMerger`
+```
+
 The package will take some time to load as many functions are being compiled to C. If a C compiler is not present on the system, warning messages will be issued and the kernel will revert to using the Wolfram Virtual Machine. This causes a slight hit to the performance, but nothing more serious.
 
 ### Running without installation
 
 It is sufficient to download just 'BIGParserAndMerger.m' and execute
 
-    Get["/path/to/BIGParserAndMerger.m"]
-    
+```mathematica
+Get["/path/to/BIGParserAndMerger.m"]
+```
+
 The `scandir` functionality, if it has also been placed in the same location, may or may not suffer (untested).
 
 ### Running without download
 
-    Get["https://raw.githubusercontent.com/lllamnyp/BIGParserAndMerger/master/BIGParserAndMerger.m"]
-    
+```mathematica
+Get["https://raw.githubusercontent.com/lllamnyp/BIGParserAndMerger/master/BIGParserAndMerger.m"]
+```
+
 Should also work. `scandir` functionality will certainly not work.
 
 ## Usage
 
 After loading the package into memory by one of the methods from the previous section, run
 
-    MergingInterface[]
+```mathematica
+MergingInterface[]
+```
 
 ### Range selection
 
