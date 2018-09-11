@@ -6,7 +6,7 @@ MMA Package for ellipsometry data import
 
 Simply extract this repository to a separate folder and run `install.bat`. Correct operation requires that the working directory matches the location of the script. If for some reason this is not the case on your machine, open a terminal (`Win + R`, `cmd`), navigate to the install script (`cd /path/to/install/bat/`) and run the script from the command line.
 
-Alternatively, you may download and run only 'install_from_hub.bat' which automatically (at the time of writing, 07.08.2018) downloads the latest files from GitHub.
+Alternatively, you may download and run only `install_from_hub.bat` which automatically (at the time of writing, 07.08.2018) downloads the latest files from GitHub.
 
 **Both scripts will overwrite any existing installation!**
 
