@@ -67,3 +67,16 @@ On top of that you may have also performed measurements on the Woolam setup, say
 After setting the sliders to the appropriate positions, you may hit "Next" to specify the data files.
 
 ![File selection](https://github.com/lllamnyp/BIGParserAndMerger/raw/master/img/file_select.png)
+
+Hit the purple "Browse" buttons to bring up the following dialog:
+
+![Normal file dialog](https://github.com/lllamnyp/BIGParserAndMerger/raw/master/img/normal_file_dialog.png)
+
+and select one or more `.big`-files (or one Woollam data file). If multiple `.big`-files are being selected, it is expected, that they correspond to the same measurement, but for different polarizer azimuths.
+
+Alternatively, you may hit the white "Browse better" button to bring up the improved file selection dialog which uses the `scandir.exe` functionality. `scandir.exe` quickly parses all of the `.big` files in a given folder using much faster C-code to bring up metadata for each `.big`-file:
+
+![Better file dialog](https://github.com/lllamnyp/BIGParserAndMerger/raw/master/img/better_file_dialog.png)
+
+Navigate to the desired folder using the left bar and click on the folder name (not the arrow). This will make `scandir.exe` run, check if the directory has been updated since the last access, cache its contents if that is the case, then load that from the cache and display the contents. Click on the column headings to sort by that column. Click on the filenames to add them to the list of files to load. Click on the appearing filenames in the rightmost bar to remove them from the selection.
+
