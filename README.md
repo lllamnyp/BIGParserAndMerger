@@ -88,4 +88,18 @@ You will be taken to this dialog:
 
 ![Calibration](https://github.com/lllamnyp/BIGParserAndMerger/raw/master/img/calibration_parameters.png)
 
-Here the errors in the polarizer and analyzer zeroes can be inputted manually for each FTIR spectral range
+Here the errors in the polarizer and analyzer zeroes can be inputted manually for each FTIR spectral range. Additionally, the "Find P0/A0" buttons can automatically find the best parameters.
+
+The depolarization degree field accepts either a real value in `[0, 1)` or an anonymous function such as
+
+```mathematica
+0.01 * (700 - #) / 700 &
+```
+
+In this case, the depolarization is calculated as a function of the wavenumber in `cm-1`. The above example would correspond to linearly increasing depolarization from `0` at `700 cm-1` to `0.01` at `0 cm-1`. `#` is standard Mathematica syntax to represent the argument of the function (i.e., the wavenumber).
+
+The second part of this dialog contains the already-described P0/A0 parameters for the compensator, but also an option to "Invert delta" (i.e., does adding a compensator push Delta to higher or lower values). Finally, Delta may or may not be coerced to `[-Pi, 0]`. In a standard measurement it is impossible to determine the sign of Delta, but if it is known, that a compensator is used, it may be deduced, that Delta is positive, rather than negative. If the box is left unchecked, such deductions will be made.
+
+After setting everything up, hit next to load all spectra and display them.
+
+![Adjustment dialog](https://github.com/lllamnyp/BIGParserAndMerger/raw/master/img/adjustment_tab.png)
