@@ -103,3 +103,39 @@ The second part of this dialog contains the already-described P0/A0 parameters f
 After setting everything up, hit next to load all spectra and display them.
 
 ![Adjustment dialog](https://github.com/lllamnyp/BIGParserAndMerger/raw/master/img/adjustment_tab.png)
+
+The experimental results of an ellipsometric measurement can be characterized with a pair of real numbers at each wavelength. One may choose to show the ellipsometric angles Psi and Delta in degrees, the dielectric function Epsilon (dimensionless real and imaginary parts), the optical conductivity Sigma (real and imaginary inverse Ohm-centimeters), or calculated normal-incidence reflectivity (intensity as a percentage and phase shift in degrees). This is selected by the buttons next to the "Y values" label.
+
+For convenience, the X-axis can be shown in different units, corresponding to energy (cm-1, eV, THz, angular frequency), corresponding to wavelength (micrometers) or to the logarithm of wavenumbers in cm-1. One can also explicitly plot in a log-linear scale, but performance-wise choosing energy as Log(wn) gives essentially the same result as choosing a Log-Linear plot, but is drawn much faster.
+
+Ideally, all measurements in the regions of overlap should match (except for Psi-Delta, since this value is also a function of the angle of incidence), however because of various factors (noise, imprecise calibration, etc) this might not be the case. The multiple sliders at the top of the dialog allow to take various corrections into account.
+
+The sliders P0/A0 allow to account for an inaccurate calibration of the polarizer/analyzer zero azimuths, but in case of a good measurement done at several different polarizer azimuths the correction for the measurement at one polarizer angle will be opposite to the correction of the measurement at the opposite polarizer angle and the net effect will be quite small. The Woollam setup does such calibrations internally, so these sliders are not available for Woollam spectral ranges.
+
+If the angle of incidence isn't determined very accurately, it can cause significant errors. In this case adjust the dTheta slider, aiming to match the adjusted spectrum to one, where you are confident about the correct angle of incidence.
+
+The left/right sliders are used to discard data from edges of the spectral range, where there is more noise.
+
+The Comp-Psi/Comp-Delta sliders are used to simulate a compensator. If no simulation is required, set Comp-Psi to 45 degrees and Comp-Delta to 0. If you have used a compensator that is known to have a roughly constant Psi of 42 degrees and Delta of e.g. 70, but are not using a direct measurement of it, but rather want to simulate its effects, you can set Comp-Psi to 42 and Comp-Delta to one of the following values: `-180+70=110`, `-70`, `+70`, `+180-70=+110`. The correct choice can be made by knowing approximately the expected properties of the sample and/or having a reference measurement without a compensator.
+
+To focus on certain parts of the plot adjust the numbers in the display limits field.
+
+Once you are satisfied with the final spectrum, hit next to move to the export dialog.
+
+![Export dialog](https://github.com/lllamnyp/BIGParserAndMerger/raw/master/img/export_tab.png)
+
+Here the program builds a single continuous function from the multiple datasets gradually transitioning between adjacent datasets in the region of their overlap by a Cos^2 interpolation. The effective angle of incidence is accordingly interpolated. The resulting data is shown in two log-linear plots.
+
+Using the drop-down menu you may select the units of energy to use in the export, the data-columns to include (by the checkmarks), whether or not to include metadata about the exported data (this includes corrections, calibration info, filenames, etc). Select a directory with the "Select directory" button, type in a filename (without the extension) in the filename field and hit one of the export buttons. The extension will be automatically selected according to the export format.
+
+**Warning! The program will not prompt you if the file already exists! It will be quietly overwritten!**
+
+The program exports in its native format (.bps) which includes the full metadata if chosen and the desired columns. This is a human-readable file and is handy for reuse in programs such as Origin.
+
+It also exports as two two-column data files (energy vs e1/e2), handy for use with WASF, which can only import spectra in this basic format.
+
+It also exports as if this was a measurement done by the Woollam setup. In this case, it does not interpolate the separate spectral ranges, instead it interprets them as measurements done at as many different angles of incidence, as there are spectra. This is convenient if you want to attempt post-processing in WVASE32. This is done by "Export VASE" next to the ".dat" extension.
+
+Finally it can export a ".mat" file, also compatible with WVASE32. In this case you will get an appropriately formatted material datafile with three columns (energy, epsilon1, epsilon2).
+
+Finally, you may save the state of the program by clicking on the "Save Project" button, which is present in the file selection dialog and the adjustment tab. This will save the state of the program exactly as it is where you clicked this button. Helpful to not have to load all the files all over again and then have to input the various corrections.
