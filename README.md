@@ -2,6 +2,8 @@
 
 MMA Package for ellipsometry data import
 
+Source code and installer located at https://github.com/lllamnyp/BIGParserAndMerger/
+
 ## Installation
 
 Simply extract this repository to a separate folder and run `install.bat`. Correct operation requires that the working directory matches the location of the script. If for some reason this is not the case on your machine, open a terminal (`Win + R`, `cmd`), navigate to the install script (`cd /path/to/install/bat/`) and run the script from the command line.
