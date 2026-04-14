@@ -41,6 +41,15 @@ Begin["`Private`"];
 (*Private definitions*)
 
 
+(* Detect whether a C compiler is available at package load time. If not,
+   compile to the Wolfram Virtual Machine instead of requesting C and
+   hoping the fallback works \[LongDash] the auto-fallback path has known
+   issues with Parallelization, complex-typed listable functions, and
+   certain v10\[Dash]v13 point releases. *)
+Needs["CCompilerDriver`"];
+$CompileTarget = If[CCompilerDriver`CCompilers[] =!= {}, "C", "WVM"];
+
+
 (*AnalyzerCorrection = (ArcTan[-Coth[Im[#1-#2]] Tan[Re[#1-#2]] Tanh[Im[#1+#2]]]+Re[#1+#2])/2 &;*)
 
 
@@ -70,7 +79,7 @@ With[{k=Tan[rhoShort2-anaCorr]/Tan[rhoShort1-anaCorr],P1=Tan[pola1],P2=Tan[pola2
 				Max[Min[Abs[co],.4999999],.0000001] Sign[co]
 			]
 		],
-		RuntimeAttributes->Listable, RuntimeOptions->"Speed", CompilationTarget->"C", Parallelization->True]; *)
+		RuntimeAttributes->Listable, RuntimeOptions->"Speed", CompilationTarget->$CompileTarget]; *)
 
 
 (*NormalizedRhoShort = With[{s = Subtract, d = Divide},
@@ -84,7 +93,7 @@ With[{k=Tan[rhoShort2-anaCorr]/Tan[rhoShort1-anaCorr],P1=Tan[pola1],P2=Tan[pola2
 (*NormalizedWeight =
 	Compile[{{mean, _Real}, {coef, _Real}, {noise, _Real}},
 		If[mean <= 0., 1.*^-7, Sqrt[Subtract[1., coef]] Divide[mean, noise]^2],
-		RuntimeAttributes->Listable, RuntimeOptions->"Speed", CompilationTarget->"C", Parallelization->True];*)
+		RuntimeAttributes->Listable, RuntimeOptions->"Speed", CompilationTarget->$CompileTarget];*)
 
 
 (*Total[Apply[ana[assoc[#1, "RhoShort"], assoc[#2, "RhoShort"]]*assoc[#1, "Weight"]*assoc[#2, "Weight"]*Abs[assoc[#1, "POLA"] - assoc[#2, "POLA"]] & , 
@@ -116,7 +125,7 @@ SmartMerge =
 				lst
 			]
 		],
-	CompilationTarget->"C", RuntimeOptions->"Speed", Parallelization->True];
+	CompilationTarget->$CompileTarget, RuntimeOptions->"Speed"];
 
 
 SmartMergeY =
@@ -255,29 +264,60 @@ ImportBIG[names_List, p0_Real, a0_Real, depol_, fourierFunc_]:=
 	];
 
 
+ImportVASE::badfmt = "Could not identify a VASE data section in `1` \[LongDash] no unit header line (eV/Angstroms/nm/cm-1/micrometers) found between the file header and the numeric data.";
+ImportVASE::badunit = "Unknown X-axis unit `1` in file `2`.";
+
 ImportVASE[name_List]:=ImportVASE[First@name];
 ImportVASE[name_String]:=
-	With[
-		{imported = ReadString[name] // StringSplit[#, {"\r\neV\r\n", "\r\ndpolE"}] & // StringSplit[# ,{"\t", "\r\n"}] &},
-		Block[
-			{
-				assoc=
-					<|
-						1 -> <|"POLA" -> 45. Degree, "X" -> 1., "Weight" -> 1., "RhoShort" -> 1. + 0. I, "Rho" -> 1. + 0. I|>
-					|>,
-				table=(Partition[Internal`StringToDouble/@imported[[2]]
-					// Developer`ToPackedArray,6]
-					// SortBy[{#[[2]]&,First}]
-					// SplitBy[#,#[[2]]&]&
-					// Transpose/@#&
-					// Developer`ToPackedArray)
-			},
-		table[[;;,1]]*=8065.55;
+	Block[{raw, unit, xScale, sections, dataStr, header, tokens,
+			assoc =
+				<|
+					1 -> <|"POLA" -> 45. Degree, "X" -> 1., "Weight" -> 1., "RhoShort" -> 1. + 0. I, "Rho" -> 1. + 0. I|>
+				|>,
+			table},
+		raw = ReadString[name];
+		If[!StringQ[raw], Message[ImportVASE::badfmt, name]; Return[$Failed]];
+		(* Strip UTF-8 BOM and normalize line endings so CompleteEASE exports
+		   from any OS/version land in a predictable shape. *)
+		raw = StringReplace[raw, "\:feff" -> ""];
+		raw = StringReplace[raw, {"\r\n" -> "\n", "\r" -> "\n"}];
+		(* Detect which unit label appears on its own line between header and data. *)
+		unit = First[
+			StringCases[raw,
+				"\n" ~~ u:("eV" | "Angstroms" | "nm" | "cm-1" | "micrometers") ~~ "\n" :> u],
+			$Failed];
+		If[unit === $Failed, Message[ImportVASE::badfmt, name]; Return[$Failed]];
+		sections = StringSplit[raw, {"\n" <> unit <> "\n", "\ndpolE"}];
+		If[Length[sections] < 2, Message[ImportVASE::badfmt, name]; Return[$Failed]];
+		header = StringSplit[sections[[1]], {"\t", "\n"}];
+		(* Keep only lines that look like numeric data rows so a missing
+		   footer marker ("dpolE") can't leak junk into the numeric parse. *)
+		dataStr = StringRiffle[
+			Select[StringSplit[sections[[2]], "\n"],
+				StringMatchQ[StringTrim[#],
+					(DigitCharacter | "." | "-" | "+") ~~ ___] &],
+			"\n"];
+		tokens = StringSplit[dataStr, {"\t", "\n"}];
+		xScale = Switch[unit,
+			"eV",          8065.54429 # &,
+			"cm-1",        # &,
+			"nm",          1.*^7 / # &,
+			"Angstroms",   1.*^8 / # &,
+			"micrometers", 1.*^4 / # &,
+			_,             Message[ImportVASE::badunit, unit, name]; Return[$Failed]
+		];
+		table = (Partition[Internal`StringToDouble /@ tokens
+				// Developer`ToPackedArray, 6]
+				// SortBy[{#[[2]]&, First}]
+				// SplitBy[#, #[[2]]&] &
+				// Transpose /@ # &
+				// Developer`ToPackedArray);
+		table[[;;,1]] = xScale[table[[;;,1]]];
 		table[[;;,4]]=Mod[table[[;;,4]],360];
 		table[[;;,2;;]]*=Degree;
 		(assoc[#]=assoc[1])&/@Range[Length[table]];
 		assoc["Full"]= <|"AOI" -> 70. Degree, "X" -> 1., "RhoShort" -> 1., "Weight" -> 1., "TotalWeight" -> 1., "POLA" -> Table[45. Degree, Length@table]|>;
-		assoc["Meta"]= <|"N"->Length[table], "Comment"->imported[[1,1]], "Type" -> "VASE"|>;
+		assoc["Meta"]= <|"N"->Length[table], "Comment"->If[Length[header]>0, First[header], ""], "Type" -> "VASE"|>;
 		Do[
 		assoc[i,"X"]=table[[i,1]];
 		assoc[i,"Rho"]=Tan[table[[i,3]]]Exp[-I  table[[i,4]]];
@@ -296,7 +336,6 @@ ImportVASE[name_String]:=
 		With[{sqrt=Sqrt[eps+th^2-1]},ArcTan[1,Divide[(sqrt-eps th)(sqrt+th),(sqrt+eps th)(sqrt-th)]]]];
 			assoc
 		]
-	]
 
 
 (* ::Subsection:: *)
@@ -307,6 +346,103 @@ Begin["`MergingInterface`"];
 
 
 $PackageDirectory = DirectoryName[$InputFileName];
+
+
+(* ::Subsubsection:: *)
+(*Plot preferences*)
+
+
+(* Prefs live per-user so reinstalling the package (which wipes $PackageDirectory)
+   doesn't clobber them. *)
+$PrefsDirectory = FileNameJoin[{$UserBaseDirectory, "ApplicationData", "BIGParserAndMerger"}];
+$PrefsFile = FileNameJoin[{$PrefsDirectory, "prefs.m"}];
+
+
+(* Named palettes. Each value is a function idx -> RGBColor (1-indexed, cycling). *)
+$Palettes = <|
+	"Default (ColorData[97])" -> (ColorData[97][#] &),
+	"Bright (dark bg)" -> With[
+		{colors = {
+			RGBColor[1.00, 0.85, 0.00],  (* amber/yellow *)
+			RGBColor[0.20, 0.90, 1.00],  (* cyan *)
+			RGBColor[1.00, 0.30, 0.70],  (* magenta *)
+			RGBColor[0.45, 1.00, 0.45],  (* lime *)
+			RGBColor[1.00, 0.55, 0.20],  (* orange *)
+			RGBColor[0.80, 0.60, 1.00],  (* violet *)
+			RGBColor[1.00, 1.00, 1.00],  (* white *)
+			RGBColor[0.55, 0.85, 0.55]}},(* pale green *)
+		colors[[Mod[# - 1, Length[colors]] + 1]] &],
+	"Bright (light bg)" -> With[
+		{colors = {
+			RGBColor[0.80, 0.10, 0.10],
+			RGBColor[0.10, 0.35, 0.80],
+			RGBColor[0.10, 0.55, 0.20],
+			RGBColor[0.80, 0.40, 0.00],
+			RGBColor[0.55, 0.10, 0.70],
+			RGBColor[0.00, 0.55, 0.55],
+			RGBColor[0.40, 0.25, 0.05],
+			RGBColor[0.25, 0.25, 0.25]}},
+		colors[[Mod[# - 1, Length[colors]] + 1]] &],
+	"Print-friendly" -> (ColorData["DarkRainbow"][Mod[(# - 1) 0.17, 1.]] &)
+|>;
+
+
+(* Transfer-line style presets. Nothing splices itself out of lists, so
+   "Solid" contributes no dashing directive to the PlotStyle entry. *)
+$TransferStyles = <|"Solid" -> Nothing, "Dashed" -> Dashed, "Dotted" -> Dotted, "DotDashed" -> DotDashed|>;
+
+
+$DefaultPrefs = <|
+	"Thickness"     -> 0.003,
+	"Palette"       -> "Default (ColorData[97])",
+	"TransferStyle" -> "Dashed",
+	"Background"    -> "Black"
+|>;
+
+
+$BackgroundOptions = <|"Black" -> Black, "White" -> White, "Light Gray" -> GrayLevel[0.92]|>;
+
+
+LoadPrefs[] := Module[{loaded},
+	$Prefs = $DefaultPrefs;
+	If[FileExistsQ[$PrefsFile],
+		loaded = Quiet @ Check[Get[$PrefsFile], $Failed];
+		If[AssociationQ[loaded],
+			KeyValueMap[If[KeyExistsQ[$Prefs, #1], $Prefs[#1] = #2] &, loaded]
+		]
+	];
+	(* Drop palette/style names that no longer exist (e.g. after an upgrade). *)
+	If[!KeyExistsQ[$Palettes, $Prefs["Palette"]], $Prefs["Palette"] = $DefaultPrefs["Palette"]];
+	If[!KeyExistsQ[$TransferStyles, $Prefs["TransferStyle"]], $Prefs["TransferStyle"] = $DefaultPrefs["TransferStyle"]];
+	If[!KeyExistsQ[$BackgroundOptions, $Prefs["Background"]], $Prefs["Background"] = $DefaultPrefs["Background"]];
+	$Prefs
+];
+
+
+SavePrefs[] := Module[{},
+	Quiet @ CreateDirectory[$PrefsDirectory, CreateIntermediateDirectories -> True];
+	Put[$Prefs, $PrefsFile];
+	$Prefs
+];
+
+
+ResetPrefs[] := ($Prefs = $DefaultPrefs; SavePrefs[]);
+
+
+(* Resolved helpers used by the plots. *)
+prefColor[i_Integer] := $Palettes[$Prefs["Palette"]][i];
+prefThickness[] := Thickness[$Prefs["Thickness"]];
+prefTransfer[] := $TransferStyles[$Prefs["TransferStyle"]];
+prefBackground[] := $BackgroundOptions[$Prefs["Background"]];
+(* Contrast color for frame/tick labels. Background\[Rule]None is required to
+   override the {"BackgroundColor",Black} theme, which internally sets a black
+   Background on every label for dark-theme readability. Without it, each tick
+   number renders inside its own opaque black rectangle. *)
+prefForeground[] := If[MemberQ[{"White", "Light Gray"}, $Prefs["Background"]], GrayLevel[0.15], GrayLevel[0.85]];
+prefLabelStyle[] := Directive[prefForeground[], FontFamily -> "Consolas", Background -> None];
+
+
+LoadPrefs[];
 
 
 scanDir[dir_] := With[{currentDir = Directory[]},
@@ -346,7 +482,7 @@ findA0 = Compile[{{rs,_Complex,2},{w,_Real,2}},
 				a0 = a0 - (9 - First@Ordering@norm)step; step = step/16,
 				{5}
 			];
-			a0], RuntimeOptions->"Speed", Parallelization->True, CompilationTarget->"C"];
+			a0], RuntimeOptions->"Speed", CompilationTarget->$CompileTarget];
 
 
 findP0 = Compile[{{rs,_Complex,2},{w,_Real,2},{pola,_Real,1},{a0,_Real}},
@@ -366,7 +502,7 @@ findP0 = Compile[{{rs,_Complex,2},{w,_Real,2},{pola,_Real,1},{a0,_Real}},
 					p0 = p0 - (9 - First@Ordering@norm)step; step = step/16;,
 					{5}
 				];
-				p0]], RuntimeOptions->"Speed", Parallelization->True, CompilationTarget->"C"];
+				p0]], RuntimeOptions->"Speed", CompilationTarget->$CompileTarget];
 
 
 FindCorrectionsRoutine[idx_] :=
@@ -418,7 +554,7 @@ SmartResample=
 		out
 		]
 		],
-	CompilationTarget->"C", RuntimeOptions->"Speed", Parallelization->True];
+	CompilationTarget->$CompileTarget, RuntimeOptions->"Speed"];
 
 
 TransferResample =
@@ -469,7 +605,7 @@ TransferResample =
 					]
 				]
 			],
-		CompilationTarget->"C", RuntimeOptions->"Speed", Parallelization->True]
+		CompilationTarget->$CompileTarget, RuntimeOptions->"Speed"]
 	];
 
 
@@ -477,22 +613,22 @@ LeftData =
 	Compile[
 		{{xL,_Real,1},{xR,_Real,1},{yL,_Real,1},{yR,_Real,1}},
 		{xL,yL}[[1;;2,1;;Subtract[Length[xL],Total[UnitStep[Subtract[xL,First[xR]]]]]]]
-		, CompilationTarget->"C", RuntimeOptions->"Speed", Parallelization->True];
+		, CompilationTarget->$CompileTarget, RuntimeOptions->"Speed"];
 RightData =
 	Compile[
 		{{xL,_Real,1},{xR,_Real,1},{yL,_Real,1},{yR,_Real,1}},
 		{xR,yR}[[1;;2,Subtract[Total[UnitStep[Subtract[Last[xL],xR]]],Length[xR]];;-1]]
-		, CompilationTarget->"C", RuntimeOptions->"Speed", Parallelization->True];
+		, CompilationTarget->$CompileTarget, RuntimeOptions->"Speed"];
 MiddleDataL =
 	Compile[
 		{{xL,_Real,1},{xR,_Real,1},{yL,_Real,1},{yR,_Real,1}},
 		{xL,yL}[[1;;2,-Total[UnitStep[Subtract[xL,First[xR]]]];;-1]]
-		, CompilationTarget->"C", RuntimeOptions->"Speed", Parallelization->True];
+		, CompilationTarget->$CompileTarget, RuntimeOptions->"Speed"];
 MiddleDataR =
 	Compile[
 		{{xL,_Real,1},{xR,_Real,1},{yL,_Real,1},{yR,_Real,1}},
 		{xR,yR}[[1;;2,1;;Total[UnitStep[Subtract[Last[xL],xR]]]]]
-		, CompilationTarget->"C", RuntimeOptions->"Speed", Parallelization->True];
+		, CompilationTarget->$CompileTarget, RuntimeOptions->"Speed"];
 MiddleDataTransfer[xL_,xR_,yL_,yR_]:=
 	If[
 		Max[xL] > Min[xR],
@@ -945,28 +1081,28 @@ pr["Top"]=90.;
 With[{s=Subtract,d=Divide},
 	psiC = Compile[{{x,_Real},{aoi,_Real},{rho,_Complex}},
 		d[ArcTan[Abs[rho]],Degree],
-		RuntimeAttributes->{Listable},CompilationTarget->"C", RuntimeOptions->"Speed", Parallelization->True];
+		RuntimeAttributes->{Listable},CompilationTarget->$CompileTarget, RuntimeOptions->"Speed"];
 	deltaC = Compile[{{x,_Real},{aoi,_Real},{rho,_Complex}},
 		d[Arg[rho],Degree],
-		RuntimeAttributes->{Listable},CompilationTarget->"C", RuntimeOptions->"Speed", Parallelization->True];
+		RuntimeAttributes->{Listable},CompilationTarget->$CompileTarget, RuntimeOptions->"Speed"];
 	eps1C = Compile[{{x,_Real},{aoi,_Real},{rho,_Complex}},
 		Re[Sin[aoi]^2(1.+(d[s[1.,rho],1.+rho]Tan[aoi])^2)],
-		RuntimeAttributes->{Listable},CompilationTarget->"C", RuntimeOptions->"Speed", Parallelization->True];
+		RuntimeAttributes->{Listable},CompilationTarget->$CompileTarget, RuntimeOptions->"Speed"];
 	eps2C = Compile[{{x,_Real},{aoi,_Real},{rho,_Complex}},
 		Im[Sin[aoi]^2(1.+(d[s[1.,rho],1.+rho]Tan[aoi])^2)],
-		RuntimeAttributes->{Listable},CompilationTarget->"C", RuntimeOptions->"Speed", Parallelization->True];
+		RuntimeAttributes->{Listable},CompilationTarget->$CompileTarget, RuntimeOptions->"Speed"];
 	sig1C = Compile[{{x,_Real},{aoi,_Real},{rho,_Complex}},
 		x Im[Sin[aoi]^2(1.+(d[s[1.,rho],1.+rho]Tan[aoi])^2)*0.0166782045],
-		RuntimeAttributes->{Listable},CompilationTarget->"C", RuntimeOptions->"Speed", Parallelization->True];
+		RuntimeAttributes->{Listable},CompilationTarget->$CompileTarget, RuntimeOptions->"Speed"];
 	sig2C = Compile[{{x,_Real},{aoi,_Real},{rho,_Complex}},
 		Minus[x Re[s[Sin[aoi]^2(1.+(d[s[1.,rho],1.+rho]Tan[aoi])^2),1]*0.0166782045]],
-		RuntimeAttributes->{Listable},CompilationTarget->"C", RuntimeOptions->"Speed", Parallelization->True];
+		RuntimeAttributes->{Listable},CompilationTarget->$CompileTarget, RuntimeOptions->"Speed"];
 	ref1C = Compile[{{x,_Real},{aoi,_Real},{rho,_Complex}}, With[{n = Sqrt[Sin[aoi]^2(1.+(d[s[1.,rho],1.+rho]Tan[aoi])^2)]},
 		100.*Abs[d[s[1.,n],1.+n]]^2],
-		RuntimeAttributes->{Listable},CompilationTarget->"C", RuntimeOptions->"Speed", Parallelization->True];
+		RuntimeAttributes->{Listable},CompilationTarget->$CompileTarget, RuntimeOptions->"Speed"];
 	ref2C = Compile[{{x,_Real},{aoi,_Real},{rho,_Complex}}, With[{n = Sqrt[Sin[aoi]^2(1.+(d[s[1.,rho],1.+rho]Tan[aoi])^2)]},
 		d[Arg[d[s[1.,n],1.+n]],Degree]],
-		RuntimeAttributes->{Listable},CompilationTarget->"C", RuntimeOptions->"Speed", Parallelization->True];
+		RuntimeAttributes->{Listable},CompilationTarget->$CompileTarget, RuntimeOptions->"Speed"];
 ]
 
 
@@ -1100,14 +1236,18 @@ AdjustmentTab[] :=
 												{i, IRRanges + VISRanges - 1}]
 							]
 						],
-						PlotTheme->{"BackgroundColor", Black}, ImageSize -> {1400, 600}, PlotRange -> Map[pr, {{"Left","Right"},{"Bottom","Top"}},{2}],
+						PlotTheme->{"BackgroundColor", prefBackground[]}, Background->prefBackground[], ImageSize -> {1400, 600}, PlotRange -> Map[pr, {{"Left","Right"},{"Bottom","Top"}},{2}],
 						Joined->True,
-						PlotStyle->Table[Thin,2(IRRanges + VISRanges)]~Join~Table[Dashed, 2(IRRanges + VISRanges - 1)],
+						PlotStyle->Join[
+							Table[{prefThickness[], prefColor[i]}, {i, 2(IRRanges + VISRanges)}],
+							Table[{prefThickness[], prefColor[i + 2(IRRanges + VISRanges)], prefTransfer[]}, {i, 2(IRRanges + VISRanges - 1)}]
+						],
+						LabelStyle->prefLabelStyle[], FrameStyle->prefForeground[],
 						ImagePadding->40, AspectRatio->52/132
 					]
 				],SpanFromLeft
 			},
-			{Row[{BackButton[]," ", SaveFileButton[], " display limits: X: ",
+			{Row[{BackButton[]," ", SaveFileButton[], " ", PreferencesButton[], " display limits: X: ",
 				StyledField[Dynamic[pr["Left"],{None,None,({pr["Left"],pr["Right"]}=MinMax[{#,pr["Right"]}])&}],Number, ImageSize->{150,25}],
 				StyledField[Dynamic[pr["Right"],{None,None,({pr["Left"],pr["Right"]}=MinMax[{pr["Left"],#}])&}],Number, ImageSize->{150,25}], "  Y: ",
 				StyledField[Dynamic[pr["Bottom"],{None,None,({pr["Bottom"],pr["Top"]}=MinMax[{#,pr["Top"]}])&}],Number, ImageSize->{150,25}],
@@ -1170,7 +1310,68 @@ OpenFileButton[] :=
 	]
 
 
-ExportTab[] := If[mergingComplete, 
+PreferencesDialog[] :=
+	DynamicModule[{draft = $Prefs},
+		CreateDialog[
+			Column[{
+				Style["Plot preferences", 18, Bold, White],
+				Grid[{
+					{Style["Palette", White, FontFamily->"Consolas"],
+						PopupMenu[Dynamic[draft["Palette"]], Keys[$Palettes]]},
+					{Style["Transfer line", White, FontFamily->"Consolas"],
+						SetterBar[Dynamic[draft["TransferStyle"]], Keys[$TransferStyles]]},
+					{Style["Background", White, FontFamily->"Consolas"],
+						SetterBar[Dynamic[draft["Background"]], Keys[$BackgroundOptions]]},
+					{Style["Thickness", White, FontFamily->"Consolas"],
+						Row[{
+							Slider[Dynamic[draft["Thickness"]], {0.001, 0.008, 0.0005}, ImageSize->220],
+							Spacer[10],
+							Dynamic[Style[ToString[NumberForm[draft["Thickness"], {4,4}]], White, FontFamily->"Consolas"]]
+						}]}
+				}, Alignment->{{Right, Left}}, Spacings->{2,1}],
+				Spacer[{1,8}],
+				Style["Preview", White, FontFamily->"Consolas"],
+				Dynamic @ Module[{xs = Subdivide[0., 10., 200], colors, lines, fg},
+					colors = $Palettes[draft["Palette"]];
+					fg = If[MemberQ[{"White", "Light Gray"}, draft["Background"]], GrayLevel[0.15], GrayLevel[0.85]];
+					lines = Table[{Thickness[draft["Thickness"]], colors[i]}, {i, 1, 5}];
+					AppendTo[lines, {Thickness[draft["Thickness"]], colors[6], $TransferStyles[draft["TransferStyle"]]}];
+					ListLinePlot[
+						Table[Sin[xs + 0.6 k] + 0.3 k, {k, 0, 5}],
+						PlotStyle -> lines,
+						PlotTheme -> {"BackgroundColor", $BackgroundOptions[draft["Background"]]},
+						Background -> $BackgroundOptions[draft["Background"]],
+						LabelStyle -> Directive[fg, FontFamily -> "Consolas", Background -> None], FrameStyle -> fg,
+						ImageSize -> {520, 160}, Frame -> True, Axes -> False]
+				],
+				Spacer[{1,8}],
+				Row[{
+					Button["Save", $Prefs = draft; SavePrefs[]; DialogReturn[],
+						Background->Purple, BaseStyle->{14,GrayLevel[.75],FontFamily->"Consolas"}],
+					Spacer[8],
+					Button["Reset to defaults", draft = $DefaultPrefs,
+						Background->GrayLevel[0.3], BaseStyle->{14,GrayLevel[.85],FontFamily->"Consolas"}],
+					Spacer[8],
+					Button["Cancel", DialogReturn[],
+						Background->GrayLevel[0.3], BaseStyle->{14,GrayLevel[.85],FontFamily->"Consolas"}]
+				}]
+			}, Alignment->Left],
+			WindowTitle -> "Plot preferences",
+			Background -> Black,
+			Modal -> True
+		]
+	]
+
+
+PreferencesButton[] :=
+	Button[
+		"Preferences",
+		PreferencesDialog[],
+		Background->Purple, BaseStyle->{16,GrayLevel[.75],FontFamily->"Consolas"}, ImageSize->Automatic, Method->"Queued"
+	]
+
+
+ExportTab[] := If[mergingComplete,
 						With[{outY = Table[
 							With[
 								{
@@ -1220,14 +1421,18 @@ Grid[{
 		{
 		ListLogLinearPlot[
 			{outTable1, outTable2},
-			PlotTheme->{"BackgroundColor", Black}, ImageSize -> {1400, 400}, PlotRange -> Automatic, Joined->True, ImagePadding->40, AspectRatio->32/132,
-			PlotLabel->"\!\(\*SubscriptBox[\(\[CurlyEpsilon]\), \(1\)]\) and \!\(\*SubscriptBox[\(\[CurlyEpsilon]\), \(2\)]\) for export"],
+			PlotTheme->{"BackgroundColor", prefBackground[]}, Background->prefBackground[], ImageSize -> {1400, 400}, PlotRange -> Automatic, Joined->True, ImagePadding->40, AspectRatio->32/132,
+			PlotStyle->{{prefThickness[], prefColor[1]}, {prefThickness[], prefColor[2]}},
+			LabelStyle->prefLabelStyle[], FrameStyle->prefForeground[],
+			PlotLabel->Style["\!\(\*SubscriptBox[\(\[CurlyEpsilon]\), \(1\)]\) and \!\(\*SubscriptBox[\(\[CurlyEpsilon]\), \(2\)]\) for export", prefForeground[]]],
 		SpanFromLeft},
 		{
 		ListLogLinearPlot[
 			outTableA,
-			PlotTheme->{"BackgroundColor", Black}, ImageSize -> {1400, 300}, PlotRange -> {Automatic, Full}, Joined->False, ImagePadding->40, AspectRatio->22/132,
-			PlotLabel->"Effective angle of incidence vs. frequency"],
+			PlotTheme->{"BackgroundColor", prefBackground[]}, Background->prefBackground[], ImageSize -> {1400, 300}, PlotRange -> {Automatic, Full}, Joined->False, ImagePadding->40, AspectRatio->22/132,
+			PlotStyle->{prefThickness[], prefColor[3]},
+			LabelStyle->prefLabelStyle[], FrameStyle->prefForeground[],
+			PlotLabel->Style["Effective angle of incidence vs. frequency", prefForeground[]]],
 		SpanFromLeft},
 		{Row[{
 			"Data OK: ", outTable1[[;;,1]] == outTable2[[;;,1]] == outTableA[[;;,1]]," | ",
