@@ -1,6 +1,6 @@
 (* ::Package:: *)
 
-BeginPackage["BIGParserAndMerger`"];
+BeginPackage["BIGParserAndMerger`", {"CCompilerDriver`"}];
 
 
 (* ::Section:: *)
@@ -34,20 +34,17 @@ corrections for this pair of measurements, averaged over the complete spectral r
 Unprotect[Evaluate[$Context<>"*"]];
 
 
+(* Detect whether a C compiler is available at package load time. Defined
+   here (in the package context, not Private`) so that nested sub-contexts
+   like MergingInterface` can see it on $ContextPath. *)
+$CompileTarget = If[CCompilers[] =!= {}, "C", "WVM"];
+
+
 Begin["`Private`"];
 
 
 (* ::Section:: *)
 (*Private definitions*)
-
-
-(* Detect whether a C compiler is available at package load time. If not,
-   compile to the Wolfram Virtual Machine instead of requesting C and
-   hoping the fallback works \[LongDash] the auto-fallback path has known
-   issues with Parallelization, complex-typed listable functions, and
-   certain v10\[Dash]v13 point releases. *)
-Needs["CCompilerDriver`"];
-$CompileTarget = If[CCompilerDriver`CCompilers[] =!= {}, "C", "WVM"];
 
 
 (*AnalyzerCorrection = (ArcTan[-Coth[Im[#1-#2]] Tan[Re[#1-#2]] Tanh[Im[#1+#2]]]+Re[#1+#2])/2 &;*)
@@ -198,10 +195,10 @@ ImportBIG[names_List, p0_Real, a0_Real, depol_, fourierFunc_]:=
 				{idx, n}
 			];
 			Do[
-				table = 
+				table =
 					Partition[
 						Internal`StringToDouble /@
-							StringCases[StringReplace[ReadString[strm[[idx]]], {"\r\n"->"", "\r"->"", "\n"->""}], Repeated[_,10]] //
+							StringTrim /@ StringCases[StringReplace[ReadString[strm[[idx]]], {"\r\n"->"", "\r"->"", "\n"->""}], Repeated[_,10]] //
 								Developer`ToPackedArray,
 						21
 					] // SortBy[First] // Transpose;
