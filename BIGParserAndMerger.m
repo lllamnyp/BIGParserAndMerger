@@ -39,6 +39,11 @@ Unprotect[Evaluate[$Context<>"*"]];
    like MergingInterface` can see it on $ContextPath. *)
 $CompileTarget = If[CCompilers[] =!= {}, "C", "WVM"];
 
+(* Internal`StringToDouble was renamed Internal`StringToMReal in ~v12-13.
+   On a clean newer kernel the old name may not exist at all. Probe at
+   load time and pick whichever actually evaluates to a number. *)
+$ParseReal = If[NumberQ[Quiet[Internal`StringToMReal["1."]]], Internal`StringToMReal, Internal`StringToDouble];
+
 
 Begin["`Private`"];
 
@@ -164,7 +169,7 @@ ImportEPD[name_String]:=
 	With[{strm = OpenRead[name, BinaryFormat->True]},
 		ReadList[strm, String, 3];
 		Block[{assoc = <||>, out},
-			out = Partition[Map[Internal`StringToDouble, StringSplit[ReadString[strm], Alternatives[",","\r","\n"," "]..]], 5][[;;,{1,2,3}]] // Transpose;
+			out = Partition[Map[$ParseReal, StringSplit[ReadString[strm], Alternatives[",","\r","\n"," "]..]], 5][[;;,{1,2,3}]] // Transpose;
 			Close[strm];
 			assoc["X"] = out[[1]];
 			assoc["Rho"] = Tan[out[[2]] Degree] Exp[I out[[3]] Degree];
@@ -197,7 +202,7 @@ ImportBIG[names_List, p0_Real, a0_Real, depol_, fourierFunc_]:=
 			Do[
 				table =
 					Partition[
-						Internal`StringToDouble /@
+						$ParseReal /@
 							StringTrim /@ StringCases[StringReplace[ReadString[strm[[idx]]], {"\r\n"->"", "\r"->"", "\n"->""}], Repeated[_,10]] //
 								Developer`ToPackedArray,
 						21
@@ -303,7 +308,7 @@ ImportVASE[name_String]:=
 			"micrometers", 1.*^4 / # &,
 			_,             Message[ImportVASE::badunit, unit, name]; Return[$Failed]
 		];
-		table = (Partition[Internal`StringToDouble /@ tokens
+		table = (Partition[$ParseReal /@ tokens
 				// Developer`ToPackedArray, 6]
 				// SortBy[{#[[2]]&, First}]
 				// SplitBy[#, #[[2]]&] &
